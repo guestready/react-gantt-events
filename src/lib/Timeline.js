@@ -95,6 +95,7 @@ export default class ReactCalendarTimeline extends Component {
     }),
     headerRef: PropTypes.func,
     scrollRef: PropTypes.func,
+    onVerticalScroll: PropTypes.func,
 
     timeSteps: PropTypes.shape({
       second: PropTypes.number,
@@ -1051,6 +1052,7 @@ export default class ReactCalendarTimeline extends Component {
                   traditionalZoom={traditionalZoom}
                   onScroll={this.onScroll}
                   isInteractingWithItem={isInteractingWithItem}
+                  onVerticalScroll={this.props.onVerticalScroll}
                 >
                   <MarkerCanvas>
                     {this.columns(

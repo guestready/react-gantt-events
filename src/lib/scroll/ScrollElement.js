@@ -12,7 +12,8 @@ class ScrollElement extends Component {
     isInteractingWithItem: PropTypes.bool.isRequired,
     onZoom: PropTypes.func.isRequired,
     onWheelZoom: PropTypes.func.isRequired,
-    onScroll: PropTypes.func.isRequired
+    onScroll: PropTypes.func.isRequired,
+    onVerticalScroll: PropTypes.func
   }
 
   constructor() {
@@ -150,10 +151,14 @@ class ScrollElement extends Component {
         this.props.onScroll(this.scrollComponent.scrollLeft - deltaX)
       }
       if (moveY) {
-        window.scrollTo(
-          window.pageXOffset,
-          this.singleTouchStart.screenY - deltaY0
-        )
+        if (typeof this.props.onVerticalScroll === 'function') {
+          this.props.onVerticalScroll(deltaY0)
+        } else {
+          window.scrollTo(
+            window.pageXOffset,
+            this.singleTouchStart.screenY - deltaY0
+          )
+        }
       }
     }
   }
