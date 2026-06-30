@@ -77,6 +77,7 @@ export default class ReactCalendarTimeline extends Component {
     itemRenderer: PropTypes.func,
     groupRenderer: PropTypes.func,
     emptyCellLabelRenderer: PropTypes.func,
+    endingItemShrinkFraction: PropTypes.number,
 
     className: PropTypes.string,
     style: PropTypes.object,
@@ -309,7 +310,8 @@ export default class ReactCalendarTimeline extends Component {
       this.state.dragTime,
       this.state.resizingEdge,
       this.state.resizeTime,
-      this.state.newGroupOrder
+      this.state.newGroupOrder,
+      props.endingItemShrinkFraction
     )
 
     /* eslint-disable react/no-direct-mutation-state */
@@ -386,7 +388,8 @@ export default class ReactCalendarTimeline extends Component {
           prevState.dragTime,
           prevState.resizingEdge,
           prevState.resizeTime,
-          prevState.newGroupOrder
+          prevState.newGroupOrder,
+          nextProps.endingItemShrinkFraction
         )
       )
     }
@@ -457,7 +460,8 @@ export default class ReactCalendarTimeline extends Component {
       this.state.dragTime,
       this.state.resizingEdge,
       this.state.resizeTime,
-      this.state.newGroupOrder
+      this.state.newGroupOrder,
+      props.endingItemShrinkFraction
     )
 
     // this is needed by dragItem since it uses pageY from the drag events
@@ -717,6 +721,7 @@ export default class ReactCalendarTimeline extends Component {
         groupHeights={groupHeights}
         groupTops={groupTops}
         emptyCellLabelRenderer={this.props.emptyCellLabelRenderer}
+        endingItemShrinkFraction={this.props.endingItemShrinkFraction}
         lineHeight={this.props.lineHeight}
       />
     )
@@ -1005,7 +1010,8 @@ export default class ReactCalendarTimeline extends Component {
         this.state.dragTime,
         this.state.resizingEdge,
         this.state.resizeTime,
-        this.state.newGroupOrder
+        this.state.newGroupOrder,
+        this.props.endingItemShrinkFraction
       )
       dimensionItems = stackResults.dimensionItems
       height = stackResults.height

@@ -460,6 +460,79 @@ export function stackGroup(itemsDimensions, isGroupStacked, lineHeight, groupTop
  * @param {number} resizeTime
  * @param {number} newGroupOrder
  */
+// Shrink, in place, the visual width of items that end inside a cell (leaving
+// free trailing space) so they only occupy `shrinkFraction` of that last cell.
+// Only the visual width changes — collision data and item times are untouched.
+export function shrinkEndingItems(
+  dimensionItems,
+  items,
+  keys,
+  canvasTimeStart,
+  canvasTimeEnd,
+  canvasWidth,
+  shrinkFraction,
+  draggingItem,
+  resizingItem
+) {
+  if (!dimensionItems || dimensionItems.length === 0) {
+    return
+  }
+
+  const itemsById = {}
+  items.forEach(it => {
+    itemsById[_get(it, keys.itemIdKey)] = it
+  })
+
+  dimensionItems.forEach(di => {
+    const item = itemsById[di.id]
+    if (!item || item.isOverlay || item.disableShrink) {
+      return
+    }
+    if (di.id === draggingItem || di.id === resizingItem) {
+      return
+    }
+
+    const itemEnd = _get(item, keys.itemTimeEndKey)
+    const groupId = _get(item, keys.itemGroupKey)
+    const cellStart = moment(itemEnd).startOf('day').valueOf()
+    const cellEnd = cellStart + 24 * 60 * 60 * 1000
+
+    if (!(itemEnd > cellStart && itemEnd < cellEnd)) {
+      return
+    }
+
+    const trailingFree = !items.some(other => {
+      if (other === item) return false
+      if (_get(other, keys.itemGroupKey) !== groupId) return false
+      const os = _get(other, keys.itemTimeStartKey)
+      const oe = _get(other, keys.itemTimeEndKey)
+      return os < cellEnd && oe > itemEnd
+    })
+    if (!trailingFree) {
+      return
+    }
+
+    const cellLeftPx = calculateXPositionForTime(
+      canvasTimeStart,
+      canvasTimeEnd,
+      canvasWidth,
+      cellStart
+    )
+    const cellWidthPx =
+      calculateXPositionForTime(
+        canvasTimeStart,
+        canvasTimeEnd,
+        canvasWidth,
+        cellEnd
+      ) - cellLeftPx
+    const targetRight = cellLeftPx + cellWidthPx * shrinkFraction
+    const newWidth = targetRight - di.dimensions.left
+    if (newWidth >= 3 && newWidth < di.dimensions.width) {
+      di.dimensions.width = newWidth
+    }
+  })
+}
+
 export function stackTimelineItems(
   items,
   groups,
@@ -475,7 +548,8 @@ export function stackTimelineItems(
   dragTime,
   resizingEdge,
   resizeTime,
-  newGroupOrder
+  newGroupOrder,
+  endingItemShrinkFraction
 ) {
   const visibleItems = getVisibleItems(
     items,
@@ -523,6 +597,21 @@ export function stackTimelineItems(
       })
     )
     .filter(item => !!item)
+
+  if (endingItemShrinkFraction != null) {
+    shrinkEndingItems(
+      dimensionItems,
+      visibleItemsWithInteraction,
+      keys,
+      canvasTimeStart,
+      canvasTimeEnd,
+      canvasWidth,
+      endingItemShrinkFraction,
+      draggingItem,
+      resizingItem
+    )
+  }
+
   // Get a new array of groupOrders holding the stacked items
   const { height, groupHeights, groupTops } = stackAll(
     dimensionItems,
@@ -717,7 +806,8 @@ export function calculateScrollCanvas(
         mergedState.dragTime,
         mergedState.resizingEdge,
         mergedState.resizeTime,
-        mergedState.newGroupOrder
+        mergedState.newGroupOrder,
+        props.endingItemShrinkFraction
       )
     )
   }

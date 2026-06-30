@@ -28,6 +28,7 @@ class Columns extends Component {
     groupHeights: PropTypes.array,
     groupTops: PropTypes.array,
     emptyCellLabelRenderer: PropTypes.func,
+    endingItemShrinkFraction: PropTypes.number,
     lineHeight: PropTypes.number
   }
 
@@ -49,35 +50,63 @@ class Columns extends Component {
       arraysEqual(nextProps.groupHeights, this.props.groupHeights) &&
       arraysEqual(nextProps.groupTops, this.props.groupTops) &&
       nextProps.emptyCellLabelRenderer === this.props.emptyCellLabelRenderer &&
+      nextProps.endingItemShrinkFraction === this.props.endingItemShrinkFraction &&
       nextProps.lineHeight === this.props.lineHeight
     )
   }
 
-  // Check if a time range overlaps with any items in a group
   isTimeRangeEmpty(groupId, timeStart, timeEnd) {
-    const { items, keys } = this.props
-    
-    if (!keys) {
-      return false
-    }
+    return this.getCellOccupancy(groupId, timeStart, timeEnd) === 'EMPTY'
+  }
 
+  // Classify a cell against a group's items:
+  //   'EMPTY'          - no item overlaps the cell
+  //   'PARTIALLY_FREE' - an item ends inside the cell and nothing covers the
+  //                      trailing part -> the trailing space is free
+  //   'OCCUPIED'       - an item spans through the cell end
+  // Uses the cell END as the primitive (not the midpoint) so it is robust to
+  // the intra-cell position of item ends across timezones.
+  getCellOccupancy(groupId, timeStart, timeEnd) {
+    const { items, keys } = this.props
+
+    if (!keys) {
+      return 'OCCUPIED'
+    }
     if (!items || _length(items) === 0) {
-      return true
+      return 'EMPTY'
     }
 
     const { itemGroupKey, itemTimeStartKey, itemTimeEndKey } = keys
-
-    // Get all items for this group
     const groupItems = items.filter(item => _get(item, itemGroupKey) === groupId)
 
-    // Check if any item overlaps with this time range
-    return !groupItems.some(item => {
+    let hasOverlap = false
+    let coversEnd = false
+    let endsInside = false
+
+    groupItems.forEach(item => {
       const itemStart = _get(item, itemTimeStartKey)
       const itemEnd = _get(item, itemTimeEndKey)
-      
-      // Check for overlap: item starts before timeEnd and ends after timeStart
-      return itemStart < timeEnd && itemEnd > timeStart
+
+      if (!(itemStart < timeEnd && itemEnd > timeStart)) {
+        return
+      }
+      hasOverlap = true
+
+      if (itemEnd >= timeEnd) {
+        coversEnd = true
+      }
+      if (itemStart <= timeStart && itemEnd > timeStart && itemEnd < timeEnd) {
+        endsInside = true
+      }
     })
+
+    if (!hasOverlap) {
+      return 'EMPTY'
+    }
+    if (!coversEnd && endsInside) {
+      return 'PARTIALLY_FREE'
+    }
+    return 'OCCUPIED'
   }
 
   render() {
@@ -94,6 +123,7 @@ class Columns extends Component {
       groupHeights,
       groupTops,
       emptyCellLabelRenderer,
+      endingItemShrinkFraction,
       lineHeight
     } = this.props
     const ratio = canvasWidth / (canvasTimeEnd - canvasTimeStart)
@@ -152,50 +182,73 @@ class Columns extends Component {
           const timeStartMs = time.valueOf()
           const timeEndMs = nextTime.valueOf()
           const cellWidth = right - left
+          const LABEL_GAP = 2
 
-          // Check each group for empty cells
           groups.forEach((group) => {
             const groupId = _get(group, this.props.keys.groupIdKey)
             const groupOrderData = groupOrders[groupId]
-            
-            if (groupOrderData && this.isTimeRangeEmpty(groupId, timeStartMs, timeEndMs)) {
-              const groupOrder = groupOrderData.index
-              const groupTop = groupTops[groupOrder] || 0
-              
-              let groupHeight = groupHeights[groupOrder]
-              if (!groupHeight) {
-                groupHeight = group.height || lineHeight
-              }
-              
-              const label = emptyCellLabelRenderer({
-                time: moment(timeStartMs),
-                timeEnd: moment(timeEndMs),
-                group: group,
-                groupOrder: groupOrder
-              })
 
-              if (label) {
-                emptyCellLabels.push(
-                  <div
-                    key={`empty-cell-${groupOrder}-${timeStartMs}`}
-                    className="rct-empty-cell-label"
-                    style={{
-                      position: 'absolute',
-                      top: `${groupTop}px`,
-                      left: `${left}px`,
-                      width: `${cellWidth}px`,
-                      height: `${groupHeight}px`,
-                      pointerEvents: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      zIndex: 1
-                    }}
-                  >
-                    {label}
-                  </div>
-                )
+            if (!groupOrderData) {
+              return
+            }
+
+            const occupancy = this.getCellOccupancy(groupId, timeStartMs, timeEndMs)
+            const isPartialCell = occupancy === 'PARTIALLY_FREE'
+            // Partial cells only get a label when items are shrunk, otherwise
+            // the item still fills the trailing space and would overlap it.
+            if (occupancy === 'OCCUPIED' || (isPartialCell && endingItemShrinkFraction == null)) {
+              return
+            }
+
+            const groupOrder = groupOrderData.index
+            const groupTop = groupTops[groupOrder] || 0
+
+            let groupHeight = groupHeights[groupOrder]
+            if (!groupHeight) {
+              groupHeight = group.height || lineHeight
+            }
+
+            const label = emptyCellLabelRenderer({
+              time: moment(timeStartMs),
+              timeEnd: moment(timeEndMs),
+              group: group,
+              groupOrder: groupOrder,
+              isPartialCell: isPartialCell
+            })
+
+            if (label) {
+              // In partial cells the label goes in the free space after the
+              // shrunk item, which occupies endingItemShrinkFraction of the cell.
+              let labelLeft = left
+              let labelWidth = cellWidth
+              if (isPartialCell) {
+                labelLeft = left + cellWidth * endingItemShrinkFraction + LABEL_GAP
+                labelWidth = Math.max(0, right - labelLeft)
               }
+
+              emptyCellLabels.push(
+                <div
+                  key={`empty-cell-${groupOrder}-${timeStartMs}`}
+                  className={
+                    'rct-empty-cell-label' +
+                    (isPartialCell ? ' rct-empty-cell-label-partial' : '')
+                  }
+                  style={{
+                    position: 'absolute',
+                    top: `${groupTop}px`,
+                    left: `${labelLeft}px`,
+                    width: `${labelWidth}px`,
+                    height: `${groupHeight}px`,
+                    pointerEvents: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1
+                  }}
+                >
+                  {label}
+                </div>
+              )
             }
           })
         }
